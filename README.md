@@ -8,7 +8,8 @@ The action runs the Ethereum Kurtosis package from [kurtosis-tech/ethereum-packa
 
 - **Kurtosis Setup and Configuration:** Automatically installs and configures Kurtosis with the specified version and backend. Supports Docker, Kubernetes, and Cloud setups.
 - **Ethereum Testnet Deployment:** Utilizes the Ethereum Kurtosis package to deploy a multi-client Ethereum network, configurable to your testing requirements.
-- **Integrated Assertoor Testing:** After the network is up and running, polls the Assertoor API to check the status of test executions, streamlining the testing process.
+- **Flexible Assertoor Test Execution:** Offers the option to wait for Assertoor test completion and return results, or enabling subsequent actions to perform additional tasks within the testnet environment.
+- **Automated Cleanup:** Executes testnet cleanup as a post-action step, allowing the testnet to remain available for subsequent actions if needed.
 
 ## Action Behavior
 
@@ -22,11 +23,11 @@ This GitHub Action automates a comprehensive series of steps to set up a complet
 
 4. **Extract Assertoor API URL:** If Assertoor is configured to run via the supplied package arguments, the action extracts the Assertoor API URL for test status polling.
 
-5. **Wait for Assertoor Tests to Complete:** If Assertoor is included in the package args, the action continuously polls the Assertoor API and prints Assertoor logs for live monitoring & status tracking. This step is skipped if Assertoor is not configured to run.
+5. **Wait for Assertoor Tests to Complete:** If Assertoor is included in the package args and the action is comfigured to wait for assertoor test completion, the action continuously polls the Assertoor API and prints Assertoor logs for live monitoring & status tracking.
 
 6. **Generate Enclave Dump:** If `enclave_dump` is set to `true`, generates a dump of the Kurtosis enclave. This dump is uploaded as a run artifact named `enclave-dump-{enclave_name}`, where `{enclave_name}` refers to either the supplied name or defaults to `gh-{workflow.run_id}`.
 
-7. **Return Assertoor Test Result:** Returns the Assertoor test results upon completion. If any Assertoor test fails, the action also fails, signaling a potential issue. This step is skipped if Assertoor is not configured to run.
+7. **Return Assertoor Test Result:** Returns the Assertoor test results upon completion. If any Assertoor test fails, the action also fails, signaling a potential issue. This step is skipped if Assertoor is not configured to run or the action is configured to not wait for assertoor.
 
 8. **Cleanup Kurtosis Enclave:** Regardless of the success or failure of previous steps, this final step ensures the Kurtosis enclave is properly stopped and removed, ensuring no resources are left running unnecessarily. This cleanup process runs to ensure the test environment is properly dismantled after action execution.
 
@@ -39,7 +40,7 @@ By detailing each step, the action ensures users have a clear understanding of t
 All inputs for this GitHub Action are optional, allowing for flexible configuration according to your specific testing needs. However, for the action to function as intended, especially for customizing the Ethereum testnet environment and Assertoor tests, it's recommended to supply a configuration file via `ethereum_package_args`, as detailed in the Configuration Example section.
 
 - `kurtosis_version`: Specific version of Kurtosis to install. If not specified, defaults to the latest version available.
-- `kubernetes_extra_args`: Extra arguments to be passed to the Kurtosis run command.
+- `kurtosis_extra_args`: Extra arguments to be passed to the Kurtosis run command.
 - `kurtosis_backend`: Backend to use for Kurtosis (options: `docker`, `kubernetes`, `cloud`). Defaults to `docker`.
 - `kurtosis_cloud_api_key`: The API key for your Cloud Kurtosis Account, required if using the cloud backend.
 - `kurtosis_cloud_instance_id`: The instance id for the cloud Kurtosis box, required if using the cloud backend.
@@ -84,13 +85,27 @@ This configuration specifies the Ethereum client pairs for the testnet and confi
 
 ## Outputs
 
-This action defines the following outputs for use in subsequent steps of your workflow:
+This action provides outputs for use in subsequent steps of your workflow, making it easier to integrate and act upon the test environment setup and test results:
 
-- `test_overview`:
-  - **Description:** Assertoor Test overview.
+- `test_overview`: Overview of Assertoor Test results.
+  
+- `failed_test_details`: Details of any failed Assertoor Tests.
+  
+- `services`: A collection of available service URLs as a JSON string. This output maps all ports exported by services to corresponding URLs that can be accessed from subsequent tasks. For example:
 
-- `failed_test_details`:
-  - **Description:** Failed Assertoor Test details.
+```json
+{
+  "assertoor": {
+    "http": {
+      "url": "http://127.0.0.1:32885",
+      "desc": "8080/tcp"
+    }
+  }
+  ...
+}
+```
+
+This JSON structure provides a convenient way to access services like Assertoor, detailing the URLs and descriptions for each service's exposed ports, facilitating easy integration with other actions or steps in your workflow.
 
 ## Usage
 

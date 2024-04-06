@@ -8,7 +8,7 @@ inputs:
     description: 'Specific version of Kurtosis to install'
     required: false
     default: 'latest'
-  kubernetes_extra_args:
+  kurtosis_extra_args:
     description: 'Extra arguments passed to the kurtosis run command'
     required: false
     default: ''
@@ -52,8 +52,15 @@ inputs:
     description: 'Generate enclave dump after test execution (true/false)'
     required: false
     default: 'true'
+  await_assertoor_tests:
+    description: 'Await assertoor test completion and return test results (true/false)'
+    required: false
+    default: 'true'
 
 outputs:
+  services:
+    description: "Collection of available service urls as JSON string"
+    value: ${{ steps.services.outputs.services }}
   test_overview:
     description: "Assertoor Test overview"
     value: ${{ steps.test_result.outputs.test_status }}
@@ -79,7 +86,7 @@ runs:
     run: |
       echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
       sudo apt update
-      if [ "${{ inputs.version }}" = "latest" ]; then
+      if [ "${{ inputs.kurtosis_version }}" = "latest" ]; then
         sudo apt install kurtosis-cli
       else
         sudo apt install kurtosis-cli=${{ inputs.kurtosis_version }}
@@ -102,8 +109,8 @@ runs:
       done
       kurtosis engine restart
     env:
-      KURTOSIS_CLOUD_API_KEY: ${{ inputs.cloud_api_key }}
-      CLOUD_INSTANCE_ID: ${{ inputs.cloud_instance_id }}
+      KURTOSIS_CLOUD_API_KEY: ${{ inputs.kurtosis_cloud_api_key }}
+      CLOUD_INSTANCE_ID: ${{ inputs.kurtosis_cloud_instance_id }}
     shell: bash
   
   # kubernetes backend configuration
@@ -151,6 +158,7 @@ runs:
       kurtosis engine status
       kurtosis enclave ls || ( kurtosis engine restart && kurtosis enclave ls )
   
+  # start kurtosis testnet
   - name: Run kurtosis
     shell: bash
     id: kurtosis
@@ -174,30 +182,69 @@ runs:
       if [ ! -z "${{ inputs.ethereum_package_args }}" ]; then
         kurtosis_args="$kurtosis_args --args-file ${{ inputs.ethereum_package_args }}"
       fi
-      if [ ! -z "${{ inputs.kubernetes_extra_args }}" ]; then
-        kurtosis_args="$kurtosis_args ${{ inputs.kubernetes_extra_args }}"
+      if [ ! -z "${{ inputs.kurtosis_extra_args }}" ]; then
+        kurtosis_args="$kurtosis_args ${{ inputs.kurtosis_extra_args }}"
       fi
 
       kurtosis run $kurtosis_package $kurtosis_args | tee $tempdir/kurtosis_output.txt
 
+  # extract assertoor url & wait for tests
   - name: Get service links
     shell: bash
     id: services
     run: |
       enclave_details=$(kurtosis enclave inspect ${{ steps.kurtosis.outputs.enclave_name }})
 
-      assertoor_url=$(echo "$enclave_details" | grep assertoor | grep http | sed 's/.*\(http:\/\/[0-9.:]\+\).*/\1/')
-      echo "assertoor_url: ${assertoor_url}"
-      echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
+      services_json="{}"
+      current_service=""
+      while read line; do
+        if [ ! -z "$(echo "$line" | grep -E "^[0-9a-f]+")" ]; then
+          current_service="$(echo "$line" | sed 's/^[^ ]* *\([^ ]*\) .*$/\1/')"
+          portmap_line="$(echo "$line" | sed 's/^[^ ]* *[^ ]* *\(.*\) \+[^ ]\+$/\1/')"
+        else
+          portmap_line="$(echo "$line" | sed 's/^ *\([^ ]\)/\1/')"
+        fi
+        if [ -z "$current_service" ]; then
+          echo "invalid service entry: $line"
+          continue
+        fi
+        if [ -z "$portmap_line" ]; then
+          continue
+        fi
 
+        if [ ! -z "$(echo "$portmap_line" | grep "<none>")" ]; then
+          continue
+        else
+          port_name="$(echo "$portmap_line" | sed 's/^\([^:]*\).*$/\1/')"
+          port_descr="$(echo "$portmap_line" | sed 's/^[^:]*: *\([^ ]*\).*$/\1/')"
+          if [ -z "$(echo "$portmap_line" | grep " -> ")" ]; then
+            port_url=""
+          else
+            port_url="$(echo "$portmap_line" | sed 's/^[^>]*> *\([^ ]*\) *$/\1/')"
+          fi
+        fi
+
+        services_json="$(echo "$services_json" | jq ".\"${current_service}\".\"${port_name}\"|={url:\"${port_url}\",desc:\"${port_descr}\"}")"
+      done <<< $(echo "$enclave_details" | awk '/User Services/,0' | tail -n +3)
+
+      echo "Services:"
+      echo "$services_json" | yq -p json -o yaml
+
+      echo "services<<EOF" >> $GITHUB_OUTPUT
+      echo "$services_json" >> $GITHUB_OUTPUT
+      echo "EOF" >> $GITHUB_OUTPUT
+
+      assertoor_url=$(echo "$services_json" | jq -r '.assertoor.http.url // ""')
+      echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
   - name: Assertoor Status Check
     id: test_result
     uses: ethpandaops/assertoor-github-action@v1
-    if: ${{ steps.services.outputs.assertoor_url != '' }}
+    if: ${{ inputs.await_assertoor_tests == 'true' && steps.services.outputs.assertoor_url != '' }}
     with:
       kurtosis_enclave_name: ${{ steps.kurtosis.outputs.enclave_name }}
       assertoor_api_url: ${{ steps.services.outputs.assertoor_url }}
   
+  # generate enclave dump
   - name: Generate enclave dump
     if: ${{ inputs.enclave_dump == 'true' }}
     shell: bash
@@ -213,14 +260,16 @@ runs:
       name: "enclave-dump-${{ steps.kurtosis.outputs.enclave_name }}"
       path: "${{ steps.kurtosis.outputs.tempdir }}/dump"
 
+  # remove kurtosis enclave
   - name: Remove kurtosis enclave
+    uses: gacts/run-and-post-run@v1
     if: ${{ always() }}
-    shell: bash
-    run: |
-      kurtosis enclave rm -f ${{ steps.kurtosis.outputs.enclave_name }} || true
+    with:
+      post: |
+        kurtosis enclave rm -f ${{ steps.kurtosis.outputs.enclave_name }} || true
 
   - name: Return test result
-    if: ${{ steps.services.outputs.assertoor_url != '' }}
+    if: ${{ inputs.await_assertoor_tests == 'true' && steps.services.outputs.assertoor_url != '' }}
     shell: bash
     run: |
       test_result="${{ steps.test_result.outputs.result }}"
