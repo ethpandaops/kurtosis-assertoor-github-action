@@ -61,6 +61,9 @@ outputs:
   services:
     description: "Collection of available service urls as JSON string"
     value: ${{ steps.services.outputs.services }}
+  test_result:
+    description: "Assertoor Test result"
+    value: ${{ steps.test_result.outputs.result }}
   test_overview:
     description: "Assertoor Test overview"
     value: ${{ steps.test_result.outputs.test_status }}

@@ -87,11 +87,13 @@ This configuration specifies the Ethereum client pairs for the testnet and confi
 
 This action provides outputs for use in subsequent steps of your workflow, making it easier to integrate and act upon the test environment setup and test results:
 
-- `test_overview`: Overview of Assertoor Test results.
-  
-- `failed_test_details`: Details of any failed Assertoor Tests.
-  
 - `services`: A collection of available service URLs as a JSON string. This output maps all ports exported by services to corresponding URLs that can be accessed from subsequent tasks. For example:
+
+- `test_result`: Assertoor Test result. Indicates the overall success or failure of the Assertoor tests.
+
+- `test_overview`: Overview of Assertoor Test results.
+
+- `failed_test_details`: Details of any failed Assertoor Tests.
 
 ```json
 {
