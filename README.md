@@ -32,22 +32,26 @@ This GitHub Action automates a comprehensive series of steps to set up a complet
 
 By detailing each step, the action ensures users have a clear understanding of the automated processes involved in setting up, executing, and concluding their Ethereum testnet environment and tests.
 
+**Note on Failure Handling:** As defined in Step 7, if any Assertoor test returns a failure result, the action will fail. For subsequent steps in your workflow to process this failure result (leveraging the `test_overview` & `failed_test_details` outputs), those steps must be configured with conditional execution policies such as `if: ${{ failure() }}`, `if: ${{ always() }}`, etc. Without these conditions, GitHub Actions may not execute the steps intended to handle or report on the failure state.
+
 ## Inputs
 
-The action accepts the following inputs to configure Kurtosis, the Ethereum testnet, and Assertoor:
+All inputs for this GitHub Action are optional, allowing for flexible configuration according to your specific testing needs. However, for the action to function as intended, especially for customizing the Ethereum testnet environment and Assertoor tests, it's recommended to supply a configuration file via `ethereum_package_args`, as detailed in the Configuration Example section.
 
-- `kurtosis_version`: Specific version of Kurtosis to install. Default: `latest`.
-- `kubernetes_extra_args`: Extra arguments passed to the Kurtosis run command. Default: `''`.
-- `kurtosis_backend`: Backend to use for Kurtosis (docker, kubernetes, cloud). Default: `docker`.
-- `kurtosis_cloud_api_key`: The API key for your Cloud Kurtosis Account (for cloud backend). Default: `''`.
-- `kurtosis_cloud_instance_id`: The instance id for the cloud Kurtosis box (for cloud backend). Default: `''`.
-- `kubernetes_config`: The base64 encoded Kubernetes cluster config (for Kubernetes backend). Default: `''`.
-- `kubernetes_cluster`: The Kubernetes cluster name to use (for Kubernetes backend). Default: `''`.
-- `kubernetes_storage_class`: The Kubernetes storage class to use (for Kubernetes backend). Default: `''`.
-- `ethereum_package_branch`: Branch of the ethereum Kurtosis package. Default: `main`.
-- `ethereum_package_args`: Path to the ethereum package arguments file, defining the testnet and Assertoor configurations. Default: `''`.
-- `enclave_name`: Kurtosis enclave name to use (default: auto-generated with workflow run id). Default: `''`.
-- `enclave_dump`: Generate enclave dump after test execution (true/false). Default: `true`.
+- `kurtosis_version`: Specific version of Kurtosis to install. If not specified, defaults to the latest version available.
+- `kubernetes_extra_args`: Extra arguments to be passed to the Kurtosis run command.
+- `kurtosis_backend`: Backend to use for Kurtosis (options: `docker`, `kubernetes`, `cloud`). Defaults to `docker`.
+- `kurtosis_cloud_api_key`: The API key for your Cloud Kurtosis Account, required if using the cloud backend.
+- `kurtosis_cloud_instance_id`: The instance id for the cloud Kurtosis box, required if using the cloud backend.
+- `kubernetes_config`: The base64 encoded Kubernetes cluster config, required if using the Kubernetes backend.
+- `kubernetes_cluster`: The Kubernetes cluster name to use, required if using the Kubernetes backend.
+- `kubernetes_storage_class`: The Kubernetes storage class to use, required if using the Kubernetes backend.
+- `ethereum_package_branch`: Branch of the ethereum Kurtosis package to use. Defaults to `main`.
+- `ethereum_package_args`: Path to the ethereum package arguments file. This is crucial for customizing the testnet and Assertoor tests as described in the Configuration Example.
+- `enclave_name`: Kurtosis enclave name to use. Defaults to an auto-generated name based on the workflow run id.
+- `enclave_dump`: Whether to generate and upload an enclave dump after test execution (`true`/`false`). Defaults to `true`.
+
+Note: While all settings are optional, not providing specific configurations, especially the `ethereum_package_args`, may result in a generic test environment that might not align with your testing requirements.
 
 ## Configuration Example
 
