@@ -66,7 +66,7 @@ outputs:
     value: ${{ steps.test_result.outputs.result }}
   test_overview:
     description: "Assertoor Test overview"
-    value: ${{ steps.test_result.outputs.test_status }}
+    value: ${{ steps.test_result.outputs.test_overview }}
   failed_test_details:
     description: "Failed Assertoor Test details"
     value: ${{ steps.test_result.outputs.failed_test_status }}
