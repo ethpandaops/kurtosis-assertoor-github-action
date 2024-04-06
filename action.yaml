@@ -121,7 +121,7 @@ runs:
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     uses: tale/kubectl-action@v1
     with:
-      base64-kube-config: ${{ inputs.kurtosis_kubernetes_config }}
+      base64-kube-config: ${{ inputs.kubernetes_config }}
   - name: Configure kurtosis to use kubernetes backend
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     shell: bash
@@ -254,10 +254,10 @@ runs:
     run: |
       tempdir="${{ steps.kurtosis.outputs.tempdir }}"
       mkdir -p $tempdir/dump
-      cd $tempdir/dump
       if [ ! -z "${{ inputs.ethereum_package_args }}" ]; then
-        cp "${{ inputs.ethereum_package_args }}" ./kurtosis-params.yaml
+        cp "${{ inputs.ethereum_package_args }}" $tempdir/dump/kurtosis-params.yaml
       fi
+      cd $tempdir/dump
       kurtosis enclave dump ${{ steps.kurtosis.outputs.enclave_name }}
   - name: Upload dump artifact
     if: ${{ inputs.enclave_dump == 'true' }}
