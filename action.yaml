@@ -1,0 +1,252 @@
+name: 'Kurtosis Assertoor GitHub Action'
+description: 'Spins up a ethereum testnet with kurtosis and runs certain tests using assertoor.'
+branding:
+  icon: 'box'
+  color: 'green'
+inputs:
+  kurtosis_version:
+    description: 'Specific version of Kurtosis to install'
+    required: false
+    default: 'latest'
+  kubernetes_extra_args:
+    description: 'Extra arguments passed to the kurtosis run command'
+    required: false
+    default: ''
+  kurtosis_backend:
+    description: 'Backend to use for Kurtoisis (docker, kubernetes, cloud)'
+    required: false
+    default: 'docker'
+  kurtosis_cloud_api_key:
+    description: 'The API key for your Cloud Kurtosis Account (for cloud backend)'
+    required: false
+    default: ''
+  kurtosis_cloud_instance_id:
+    description: 'The instance id for the cloud Kurtosis box (for cloud backend)'
+    required: false
+    default: ''
+  kubernetes_config:
+    description: 'The base64 encoded kubernetes cluster (for kubernetes backend)'
+    required: false
+    default: ''
+  kubernetes_cluster:
+    description: 'The kubernetes cluster name to use (for kubernetes backend)'
+    required: false
+    default: ''
+  kubernetes_storage_class:
+    description: 'The kubernetes storage class to use (for kubernetes backend)'
+    required: false
+    default: ''
+  ethereum_package_branch:
+    description: 'Branch of the ethereum kurtosis package'
+    required: false
+    default: 'main'
+  ethereum_package_args:
+    description: 'Path to the ethereum package arguments file'
+    required: false
+    default: ''
+  enclave_name:
+    description: 'Kurtoisis enclave name to use (default: auto generated with workflow run id)'
+    required: false
+    default: ''
+  enclave_dump:
+    description: 'Generate enclave dump after test execution (true/false)'
+    required: false
+    default: 'true'
+
+outputs:
+  test_overview:
+    description: "Assertoor Test overview"
+    value: ${{ steps.test_result.outputs.test_status }}
+  failed_test_details:
+    description: "Failed Assertoor Test details"
+    value: ${{ steps.test_result.outputs.failed_test_status }}
+  
+runs:
+  using: 'composite'
+  steps:
+  - name: "Install shell dependencies"
+    shell: bash
+    run: |
+      if [ -z "$(which yq)" ]; then
+        sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
+      fi
+
+      if [ -z "$(which envsubst)" ]; then
+        sudo apt-get update
+        sudo apt-get install gettext-base
+      fi
+  - name: Setup Kurtosis
+    run: |
+      echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+      sudo apt update
+      if [ "${{ inputs.version }}" = "latest" ]; then
+        sudo apt install kurtosis-cli
+      else
+        sudo apt install kurtosis-cli=${{ inputs.kurtosis_version }}
+      fi
+      kurtosis analytics disable
+      echo "$(dirname $(which kurtosis))" >> $GITHUB_PATH
+    shell: bash
+  
+  # cloud backend configuration
+  - name: Configure kurtosis to use kurtosis cloud
+    if: ${{ inputs.kurtosis_backend == 'cloud' }}
+    run: |
+      n=0
+      until [ "$n" -ge 3 ]
+      do
+        kurtosis cloud load ${CLOUD_INSTANCE_ID} && break
+        n=$((n+1))
+        echo "Retry $n/3..."
+        sleep 5
+      done
+      kurtosis engine restart
+    env:
+      KURTOSIS_CLOUD_API_KEY: ${{ inputs.cloud_api_key }}
+      CLOUD_INSTANCE_ID: ${{ inputs.cloud_instance_id }}
+    shell: bash
+  
+  # kubernetes backend configuration
+  - name: Setup kubectl
+    if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
+    uses: tale/kubectl-action@v1
+    with:
+      base64-kube-config: ${{ inputs.kurtosis_kubernetes_config }}
+  - name: Configure kurtosis to use kubernetes backend
+    if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
+    shell: bash
+    run: |
+      kubectl config use-context ${{ inputs.kubernetes_cluster }}
+      kubectl get nodes
+      echo "Kubernetes engine is ready!"
+
+      kurtosis_config=$(kurtosis config path)
+      echo "config-version: 2" > $kurtosis_config
+      echo "should-send-metrics: false" >> $kurtosis_config
+      echo "kurtosis-clusters:" >> $kurtosis_config
+      echo "  docker:" >> $kurtosis_config
+      echo "    type: \"docker\"" >> $kurtosis_config
+      echo "  cloud:" >> $kurtosis_config
+      echo "    type: \"kubernetes\"" >> $kurtosis_config
+      echo "    config:" >> $kurtosis_config
+      echo "      kubernetes-cluster-name: \"${{ inputs.kubernetes_cluster }}\"" >> $kurtosis_config
+      echo "      storage-class: \"${{ inputs.kubernetes_storage_class }}\"" >> $kurtosis_config
+      echo "      enclave-size-in-megabytes: 200" >> $kurtosis_config
+
+      cat $kurtosis_config
+
+      kurtosis cluster set cloud
+  - name: Run kurtosis gateway in background
+    uses: JarvusInnovations/background-action@v1
+    if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
+    with:
+      run: |
+        kurtosis gateway
+      wait-on: |
+        tcp:localhost:9710
+  - name: Check kurtosis engine in kubernetes cluster
+    if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
+    shell: bash
+    run: |
+      kurtosis engine status
+      kurtosis enclave ls || ( kurtosis engine restart && kurtosis enclave ls )
+  
+  - name: Run kurtosis
+    shell: bash
+    id: kurtosis
+    run: |
+      kurtosis_package="github.com/kurtosis-tech/ethereum-package"
+      if [ ! -z "${{ inputs.ethereum_package_branch }}" ]; then
+        kurtosis_package="${kurtosis_package}@${{ inputs.ethereum_package_branch }}"
+      fi
+
+      enclave_name="${{ inputs.enclave_name }}"
+      if [ -z "$enclave_name" ]; then
+        enclave_name="gh-${{ github.run_id }}"
+      fi
+      echo "enclave_name=${enclave_name}" >> $GITHUB_OUTPUT
+
+      tempdir="${{ runner.temp }}/$enclave_name"
+      mkdir -p $tempdir
+      echo "tempdir=${tempdir}" >> $GITHUB_OUTPUT
+
+      kurtosis_args="--enclave $enclave_name"
+      if [ ! -z "${{ inputs.ethereum_package_args }}" ]; then
+        kurtosis_args="$kurtosis_args --args-file ${{ inputs.ethereum_package_args }}"
+      fi
+      if [ ! -z "${{ inputs.kubernetes_extra_args }}" ]; then
+        kurtosis_args="$kurtosis_args ${{ inputs.kubernetes_extra_args }}"
+      fi
+
+      kurtosis run $kurtosis_package $kurtosis_args | tee $tempdir/kurtosis_output.txt
+
+  - name: Get service links
+    shell: bash
+    id: services
+    run: |
+      enclave_details=$(kurtosis enclave inspect ${{ steps.kurtosis.outputs.enclave_name }})
+
+      assertoor_url=$(echo "$enclave_details" | grep assertoor | grep http | sed 's/.*\(http:\/\/[0-9.:]\+\).*/\1/')
+      echo "assertoor_url: ${assertoor_url}"
+      echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
+
+  - name: Assertoor Status Check
+    id: test_result
+    uses: ethpandaops/assertoor-github-action@v1
+    if: ${{ steps.services.outputs.assertoor_url != '' }}
+    with:
+      kurtosis_enclave_name: ${{ steps.kurtosis.outputs.enclave_name }}
+      assertoor_api_url: ${{ steps.services.outputs.assertoor_url }}
+  
+  - name: Generate enclave dump
+    if: ${{ inputs.enclave_dump == 'true' }}
+    shell: bash
+    run: |
+      tempdir="${{ steps.kurtosis.outputs.tempdir }}"
+      mkdir -p $tempdir/dump
+      cd $tempdir/dump
+      kurtosis enclave dump ${{ steps.kurtosis.outputs.enclave_name }}
+  - name: Upload dump artifact
+    if: ${{ inputs.enclave_dump == 'true' }}
+    uses: actions/upload-artifact@v4
+    with:
+      name: "enclave-dump-${{ steps.kurtosis.outputs.enclave_name }}"
+      path: "${{ steps.kurtosis.outputs.tempdir }}/dump"
+
+  - name: Remove kurtosis enclave
+    if: ${{ always() }}
+    shell: bash
+    run: |
+      kurtosis enclave rm -f ${{ steps.kurtosis.outputs.enclave_name }} || true
+
+  - name: Return test result
+    if: ${{ steps.services.outputs.assertoor_url != '' }}
+    shell: bash
+    run: |
+      test_result="${{ steps.test_result.outputs.result }}"
+      test_status=$(
+      cat <<"EOF"
+      ${{ steps.test_result.outputs.test_overview }}
+      EOF
+      )
+      failed_test_status=$(
+      cat <<"EOF"
+      ${{ steps.test_result.outputs.failed_test_details }}
+      EOF
+      )
+      chatgpt_summary=$(
+      cat <<"EOF"
+      ${{ steps.chatgpt.outputs.summary }}
+      EOF
+      )
+
+      echo "Test Result:  $test_result"
+      echo "$test_status"
+
+      if ! [ "$test_result" == "success" ]; then
+        echo ""
+        echo "Failed Test Task Status:"
+        echo "$failed_test_status"
+
+        exit 1 # fail action
+      fi
