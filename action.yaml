@@ -52,6 +52,10 @@ inputs:
     description: 'Generate enclave dump after test execution (true/false)'
     required: false
     default: 'true'
+  persistent_logs:
+    description: 'Run persistent log collection (true/false)'
+    required: false
+    default: 'false'
   await_assertoor_tests:
     description: 'Await assertoor test completion and return test results (true/false)'
     required: false
@@ -191,6 +195,84 @@ runs:
 
       kurtosis run $kurtosis_package $kurtosis_args | tee $tempdir/kurtosis_output.txt
 
+  # kubernets logs are non-persistent, so we have to keep collecting logs of all running pods locally.
+  - name: Create persistent log collection script for kubernetes
+    uses: DamianReeves/write-file-action@master
+    with:
+      path: ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
+      write-mode: overwrite
+      contents: |
+        #!/bin/bash
+        
+        namespace="kt-${{ steps.kurtosis.outputs.enclave_name }}"
+        tempdir="${{ steps.kurtosis.outputs.tempdir }}"
+        mkdir -p $tempdir/logs
+
+        collect_pod_logs() {
+          podname="$1"
+          logpath="$tempdir/logs/$podname"
+          if [ -d $logpath ]; then
+            return
+          fi
+
+          mkdir $logpath
+          touch $logpath/full_logs.log
+
+          echo "Starting log collection for $podname"
+          since_time=""
+
+          while true
+          do
+            podstatus=$(kubectl -n $namespace get pod $podname)
+            if [ ! -z "$(echo "$podstatus" | grep "not found")" ]; then
+              break
+            fi
+
+            extra_args=""
+            if [ ! -z "$since_time" ]; then
+              extra_args="--since-time $since_time"
+            fi
+
+            kubectl -n $namespace logs -f $extra_args --all-containers $podname >> $logpath/full_logs.log || true
+
+            since_time="$(date --iso-8601=seconds | sed 's/\+/Z/')"
+            echo "" >> $logpath/full_logs.log
+            echo "### log collection interrupted at $since_time" >> $logpath/full_logs.log
+            echo "" >> $logpath/full_logs.log
+            sleep 10
+          done
+
+          echo "Completed log collection for $podname"
+        }
+
+        while read line; do
+          podname=$(echo "$line" | sed 's/^\([^ ]*\) .*$/\1/')
+          echo "pod name: $podname"
+
+          collect_pod_logs $podname &
+        done <<< $(kubectl -n $namespace get pods | tail -n +2)
+
+        sleep 10
+        echo "ok" > $tempdir/log_collect.txt
+        
+        sleep 60
+        FAIL=0
+        for job in `jobs -p`; do
+          echo $job
+          wait $job || let "FAIL+=1"
+        done
+  - name: Run persistent log collection for kubernetes in background
+    uses: JarvusInnovations/background-action@v1
+    if: ${{ inputs.kurtosis_backend == 'kubernetes' && inputs.persistent_logs == 'true' }}
+    with:
+      run: |
+        chmod 755 ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh && ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
+      wait-on: |
+        file:${{ steps.kurtosis.outputs.tempdir }}/log_collect.txt
+      tail: true
+      log-output-resume: stderr,stdout
+      log-output-if: failure,success
+
   # extract assertoor url & wait for tests
   - name: Get service links
     shell: bash
@@ -249,7 +331,7 @@ runs:
   
   # generate enclave dump
   - name: Generate enclave dump
-    if: ${{ inputs.enclave_dump == 'true' }}
+    if: ${{ always() && inputs.enclave_dump == 'true' }}
     shell: bash
     run: |
       tempdir="${{ steps.kurtosis.outputs.tempdir }}"
@@ -257,10 +339,21 @@ runs:
       if [ ! -z "${{ inputs.ethereum_package_args }}" ]; then
         cp "${{ inputs.ethereum_package_args }}" $tempdir/dump/kurtosis-params.yaml
       fi
+      if [ -f $tempdir/kurtosis_output.txt ]; then
+        cp $tempdir/kurtosis_output.txt $tempdir/dump/kurtosis_output.log
+      fi
       cd $tempdir/dump
       kurtosis enclave dump ${{ steps.kurtosis.outputs.enclave_name }}
+
+      if [ "${{ inputs.persistent_logs }}" == "true" ] && [ -d $tempdir/logs ]; then
+        # add full logfiles to enclave dump
+        for podname in $tempdir/logs/* ; do
+          echo "copy persisted logs from $podname"
+          cp $podname/*.log $tempdir/dump/${{ steps.kurtosis.outputs.enclave_name }}--*/${podname##*/}/ || true
+        done
+      fi
   - name: Upload dump artifact
-    if: ${{ inputs.enclave_dump == 'true' }}
+    if: ${{ always() && inputs.enclave_dump == 'true' }}
     uses: actions/upload-artifact@v4
     with:
       name: "enclave-dump-${{ steps.kurtosis.outputs.enclave_name }}"
