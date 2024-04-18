@@ -228,6 +228,8 @@ runs:
               break
             fi
 
+            old_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
+
             extra_args=""
             if [ ! -z "$since_time" ]; then
               extra_args="--since-time $since_time"
@@ -235,10 +237,13 @@ runs:
 
             kubectl -n $namespace logs -f $extra_args --all-containers $podname >> $logpath/full_logs.log || true
 
-            since_time="$(date --iso-8601=seconds | sed 's/\+/Z/')"
-            echo "" >> $logpath/full_logs.log
-            echo "### log collection interrupted at $since_time" >> $logpath/full_logs.log
-            echo "" >> $logpath/full_logs.log
+            new_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
+            if [ "$new_logsize" -gt "$old_logsize" ]; then
+              since_time="$(date --iso-8601=seconds)"
+              echo "" >> $logpath/full_logs.log
+              echo "### log collection interrupted at $since_time" >> $logpath/full_logs.log
+              echo "" >> $logpath/full_logs.log
+            fi
             sleep 10
           done
 
