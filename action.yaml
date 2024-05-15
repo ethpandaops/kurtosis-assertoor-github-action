@@ -40,6 +40,10 @@ inputs:
     description: 'Branch of the ethereum kurtosis package'
     required: false
     default: 'main'
+  ethereum_package_url:
+    description: 'URL of the ethereum kurtosis package'
+    required: false
+    default: 'github.com/kurtosis-tech/ethereum-package'
   ethereum_package_args:
     description: 'Path to the ethereum package arguments file'
     required: false
@@ -170,7 +174,7 @@ runs:
     shell: bash
     id: kurtosis
     run: |
-      kurtosis_package="github.com/kurtosis-tech/ethereum-package"
+      kurtosis_package="${{ inputs.ethereum_package_url }}"
       if [ ! -z "${{ inputs.ethereum_package_branch }}" ]; then
         kurtosis_package="${kurtosis_package}@${{ inputs.ethereum_package_branch }}"
       fi
