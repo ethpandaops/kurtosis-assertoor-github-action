@@ -2,7 +2,7 @@
 
 `kurtosis-assertoor-github-action` is a comprehensive GitHub Action that encapsulates both the setup of a Kurtosis Ethereum Testnet environment and the execution of tests via Assertoor. This action automates the process of configuring Kurtosis with your preferred backend (Docker, Kubernetes, or Cloud) and deploying an Ethereum network for testing. Subsequently, it leverages the `assertoor-github-action` to poll the Assertoor API, facilitating the monitoring of test executions on the Ethereum Testnet.
 
-The action runs the Ethereum Kurtosis package from [kurtosis-tech/ethereum-package](https://github.com/kurtosis-tech/ethereum-package), allowing for the deployment of a customizable Ethereum Testnet. To tailor the testnet configuration, such as selecting specific client pairs and configuring Assertoor tests, the `ethereum_package_args` input is used to provide a configuration file.
+The action runs the Ethereum Kurtosis package from [ethpandaops/ethereum-package](https://github.com/ethpandaops/ethereum-package), allowing for the deployment of a customizable Ethereum Testnet. To tailor the testnet configuration, such as selecting specific client pairs and configuring Assertoor tests, the `ethereum_package_args` input is used to provide a configuration file.
 
 ## Features
 
@@ -132,7 +132,7 @@ This GitHub Action leverages a variety of tools and resources designed to facili
 
 - **Kurtosis** ([kurtosis-tech/kurtosis](https://github.com/kurtosis-tech/kurtosis)): A platform that simplifies the packaging and launching of ephemeral backend stacks, making advanced testnet setups more accessible to developers.
 
-- **Ethereum Package** ([kurtosis-tech/ethereum-package](https://github.com/kurtosis-tech/ethereum-package)): A specialized Kurtosis package that enables the deployment of a private, portable, and modular Ethereum development network, supporting comprehensive testing environments.
+- **Ethereum Package** ([ethpandaops/ethereum-package](https://github.com/ethpandaops/ethereum-package)): A specialized Kurtosis package that enables the deployment of a private, portable, and modular Ethereum development network, supporting comprehensive testing environments.
 
 - **Assertoor** ([ethpandaops/assertoor](https://github.com/ethpandaops/assertoor)): An Ethereum Testnet Testing Tool that allows for the execution and monitoring of various test scenarios on Ethereum testnets, focusing on network stability and beacon chain actions.
 

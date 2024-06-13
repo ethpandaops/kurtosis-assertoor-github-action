@@ -43,7 +43,7 @@ inputs:
   ethereum_package_url:
     description: 'URL of the ethereum kurtosis package'
     required: false
-    default: 'github.com/kurtosis-tech/ethereum-package'
+    default: 'github.com/ethpandaops/ethereum-package'
   ethereum_package_args:
     description: 'Path to the ethereum package arguments file'
     required: false
