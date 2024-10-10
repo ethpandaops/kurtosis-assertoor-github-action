@@ -8,7 +8,7 @@ The action runs the Ethereum Kurtosis package from [ethpandaops/ethereum-package
 
 - **Kurtosis Setup and Configuration:** Automatically installs and configures Kurtosis with the specified version and backend. Supports Docker, Kubernetes, and Cloud setups.
 - **Ethereum Testnet Deployment:** Utilizes the Ethereum Kurtosis package to deploy a multi-client Ethereum network, configurable to your testing requirements.
-- **Flexible Assertoor Test Execution:** Offers the option to wait for Assertoor test completion and return results, or enabling subsequent actions to perform additional tasks within the testnet environment.
+- **Flexible Assertoor Test Execution:** If Assertoor is included in the package args it is possible to enable subsequent actions to perform additional tasks within the testnet environment.
 - **Automated Cleanup:** Executes testnet cleanup as a post-action step, allowing the testnet to remain available for subsequent actions if needed.
 
 ## Action Behavior
@@ -23,11 +23,11 @@ This GitHub Action automates a comprehensive series of steps to set up a complet
 
 4. **Extract Assertoor API URL:** If Assertoor is configured to run via the supplied package arguments, the action extracts the Assertoor API URL for test status polling.
 
-5. **Wait for Assertoor Tests to Complete:** If Assertoor is included in the package args and the action is comfigured to wait for assertoor test completion, the action continuously polls the Assertoor API and prints Assertoor logs for live monitoring & status tracking.
+5. **Wait for Assertoor Tests to Complete:** If Assertoor is included in the package args, the action continuously polls the Assertoor API and prints Assertoor logs for live monitoring & status tracking.
 
 6. **Generate Enclave Dump:** If `enclave_dump` is set to `true`, generates a dump of the Kurtosis enclave. This dump is uploaded as a run artifact named `enclave-dump-{enclave_name}`, where `{enclave_name}` refers to either the supplied name or defaults to `gh-{workflow.run_id}`.
 
-7. **Return Assertoor Test Result:** Returns the Assertoor test results upon completion. If any Assertoor test fails, the action also fails, signaling a potential issue. This step is skipped if Assertoor is not configured to run or the action is configured to not wait for assertoor.
+7. **Return Assertoor Test Result:** Returns the Assertoor test results upon completion. If any Assertoor test fails, the action also fails, signaling a potential issue. This step is skipped if Assertoor is not configured to run.
 
 8. **Cleanup Kurtosis Enclave:** Regardless of the success or failure of previous steps, this final step ensures the Kurtosis enclave is properly stopped and removed, ensuring no resources are left running unnecessarily. This cleanup process runs to ensure the test environment is properly dismantled after action execution.
 
