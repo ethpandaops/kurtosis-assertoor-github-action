@@ -127,7 +127,7 @@ runs:
   # kubernetes backend configuration
   - name: Setup kubectl
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
-    uses: tale/kubectl-action@v1
+    uses: tale/kubectl-action@a3b800d623aebc530384fe67de1b337332e23290 # v1.4.0
     with:
       base64-kube-config: ${{ inputs.kubernetes_config }}
   - name: Configure kurtosis to use kubernetes backend
@@ -155,7 +155,7 @@ runs:
 
       kurtosis cluster set cloud
   - name: Run kurtosis gateway in background
-    uses: JarvusInnovations/background-action@v1
+    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     with:
       run: |
@@ -201,7 +201,7 @@ runs:
 
   # kubernets logs are non-persistent, so we have to keep collecting logs of all running pods locally.
   - name: Create persistent log collection script for kubernetes
-    uses: DamianReeves/write-file-action@master
+    uses: DamianReeves/write-file-action@1d019960841941be46b139298996df6f139cc7a4 # dependabot/npm_and_yarn/undici-5.28.5-1d01996
     with:
       path: ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
       write-mode: overwrite
@@ -271,7 +271,7 @@ runs:
           wait $job || let "FAIL+=1"
         done
   - name: Run persistent log collection for kubernetes in background
-    uses: JarvusInnovations/background-action@v1
+    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
     if: ${{ inputs.kurtosis_backend == 'kubernetes' && inputs.persistent_logs == 'true' }}
     with:
       run: |
@@ -332,7 +332,7 @@ runs:
       echo "assertoor_url=${assertoor_url}" >> $GITHUB_OUTPUT
   - name: Assertoor Status Check
     id: test_result
-    uses: ethpandaops/assertoor-github-action@v1
+    uses: ethpandaops/assertoor-github-action@2c0747b6d798a3a646d4339c85258940b8fa66ff # v1
     if: ${{ inputs.await_assertoor_tests == 'true' && steps.services.outputs.assertoor_url != '' }}
     with:
       kurtosis_enclave_name: ${{ steps.kurtosis.outputs.enclave_name }}
@@ -363,14 +363,14 @@ runs:
       fi
   - name: Upload dump artifact
     if: ${{ always() && inputs.enclave_dump == 'true' }}
-    uses: actions/upload-artifact@v4
+    uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
     with:
       name: "enclave-dump-${{ steps.kurtosis.outputs.enclave_name }}"
       path: "${{ steps.kurtosis.outputs.tempdir }}/dump"
 
   # remove kurtosis enclave
   - name: Remove kurtosis enclave
-    uses: gacts/run-and-post-run@v1
+    uses: gacts/run-and-post-run@d803f6920adc9a47eeac4cb6c93dbc2e2890c684 # v1.4.2
     if: ${{ always() }}
     with:
       post: |
