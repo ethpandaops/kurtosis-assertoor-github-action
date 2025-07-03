@@ -64,7 +64,7 @@ inputs:
     description: 'Await assertoor test completion and return test results (true/false)'
     required: false
     default: 'true'
-  docker_cache_params:
+  docker_cache_enabled:
     description: 'Enable docker cache (true/false)'
     required: false
     default: 'false'
@@ -114,7 +114,7 @@ runs:
         sudo apt-get install gettext-base
       fi
   - name: Setup Kurtosis (with cache)
-    if: ${{ inputs.docker_cache_params == 'true' }}
+    if: ${{ inputs.docker_cache_enabled == 'true' }}
     shell: bash
     run: |
       # Check if docker cache URL is provided
@@ -194,7 +194,7 @@ runs:
       fi
 
   - name: Setup Kurtosis (regular)
-    if: ${{ inputs.docker_cache_params != 'true' }}
+    if: ${{ inputs.docker_cache_enabled != 'true' }}
     shell: bash
     run: |
       echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
@@ -208,7 +208,7 @@ runs:
       echo "$(dirname $(which kurtosis))" >> $GITHUB_PATH
 
   - name: Pull images
-    if: ${{ inputs.docker_cache_params == 'true' }}
+    if: ${{ inputs.docker_cache_enabled == 'true' }}
     shell: bash
     run: |
       # Check if docker cache URL is provided
