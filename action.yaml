@@ -161,7 +161,7 @@ runs:
         echo "BLACK_VERSION=$BLACK_VERSION" >> $GITHUB_ENV
         echo "  Black: $BLACK_VERSION"
 
-        CURL_JQ_VERSION="latest"  # badouralix/curl-jq uses latest tag by default in Kurtosis
+        CURL_JQ_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/78041d2b84d2e56a5bf84d70e3501dfa4056c4b6/core/server/api_container/server/startosis_engine/kurtosis_instruction/tasks/run_sh.go | grep 'badouralix/curl-jq:' | sed 's/.*badouralix\/curl-jq:\([^"]*\)".*/\1/')
         echo "CURL_JQ_VERSION=$CURL_JQ_VERSION" >> $GITHUB_ENV
         echo "  Curl-jq: $CURL_JQ_VERSION"
 
