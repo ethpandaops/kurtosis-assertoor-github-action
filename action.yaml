@@ -363,14 +363,14 @@ runs:
       fi
   - name: Upload dump artifact
     if: ${{ always() && inputs.enclave_dump == 'true' }}
-    uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
     with:
       name: "enclave-dump-${{ steps.kurtosis.outputs.enclave_name }}"
       path: "${{ steps.kurtosis.outputs.tempdir }}/dump"
 
   # remove kurtosis enclave
   - name: Remove kurtosis enclave
-    uses: gacts/run-and-post-run@d803f6920adc9a47eeac4cb6c93dbc2e2890c684 # v1.4.2
+    uses: gacts/run-and-post-run@81b6ce503cde93862cec047c54652e45c5dca991 # v1.4.3
     if: ${{ always() }}
     with:
       post: |
