@@ -95,7 +95,7 @@ runs:
       fi
   - name: Setup Kurtosis
     run: |
-      echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+      echo "deb [trusted=yes] https://sdk.kurtosis.com/kurtosis-cli-release-artifacts/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
       sudo apt update
       if [ "${{ inputs.kurtosis_version }}" = "latest" ]; then
         sudo apt install kurtosis-cli
