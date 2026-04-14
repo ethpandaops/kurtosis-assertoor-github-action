@@ -127,9 +127,13 @@ runs:
   # kubernetes backend configuration
   - name: Setup kubectl
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
-    uses: tale/kubectl-action@a3b800d623aebc530384fe67de1b337332e23290 # v1.4.0
-    with:
-      base64-kube-config: ${{ inputs.kubernetes_config }}
+    shell: bash
+    env:
+      KUBE_CONFIG_B64: ${{ inputs.kubernetes_config }}
+    run: |
+      mkdir -p "$HOME/.kube"
+      printf '%s' "$KUBE_CONFIG_B64" | base64 -d > "$HOME/.kube/config"
+      chmod 600 "$HOME/.kube/config"
   - name: Configure kurtosis to use kubernetes backend
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     shell: bash
@@ -155,13 +159,16 @@ runs:
 
       kurtosis cluster set cloud
   - name: Run kurtosis gateway in background
-    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
-    with:
-      run: |
-        kurtosis gateway
-      wait-on: |
-        tcp:localhost:9710
+    shell: bash
+    run: |
+      nohup kurtosis gateway > /tmp/kurtosis-gateway.log 2>&1 &
+      disown
+      if ! npx --yes wait-on@8.0.1 tcp:localhost:9710 --timeout 60000 --interval 500 --verbose; then
+        echo "::error::kurtosis gateway failed to listen on localhost:9710"
+        cat /tmp/kurtosis-gateway.log || true
+        exit 1
+      fi
   - name: Check kurtosis engine in kubernetes cluster
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     shell: bash
@@ -201,86 +208,88 @@ runs:
 
   # kubernets logs are non-persistent, so we have to keep collecting logs of all running pods locally.
   - name: Create persistent log collection script for kubernetes
-    uses: DamianReeves/write-file-action@1d019960841941be46b139298996df6f139cc7a4 # dependabot/npm_and_yarn/undici-5.28.5-1d01996
-    with:
-      path: ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
-      write-mode: overwrite
-      contents: |
-        #!/bin/bash
-        
-        namespace="kt-${{ steps.kurtosis.outputs.enclave_name }}"
-        tempdir="${{ steps.kurtosis.outputs.tempdir }}"
-        mkdir -p $tempdir/logs
+    shell: bash
+    run: |
+      cat > "${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh" <<'SCRIPT_EOF'
+      #!/bin/bash
 
-        collect_pod_logs() {
-          podname="$1"
-          logpath="$tempdir/logs/$podname"
-          if [ -d $logpath ]; then
-            return
+      namespace="kt-${{ steps.kurtosis.outputs.enclave_name }}"
+      tempdir="${{ steps.kurtosis.outputs.tempdir }}"
+      mkdir -p $tempdir/logs
+
+      collect_pod_logs() {
+        podname="$1"
+        logpath="$tempdir/logs/$podname"
+        if [ -d $logpath ]; then
+          return
+        fi
+
+        mkdir $logpath
+        touch $logpath/full_logs.log
+
+        echo "Starting log collection for $podname"
+        since_time=""
+
+        while true
+        do
+          podstatus=$(kubectl -n $namespace get pod $podname)
+          if [ ! -z "$(echo "$podstatus" | grep "not found")" ]; then
+            break
           fi
 
-          mkdir $logpath
-          touch $logpath/full_logs.log
+          old_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
 
-          echo "Starting log collection for $podname"
-          since_time=""
+          extra_args=""
+          if [ ! -z "$since_time" ]; then
+            extra_args="--since-time $since_time"
+          fi
 
-          while true
-          do
-            podstatus=$(kubectl -n $namespace get pod $podname)
-            if [ ! -z "$(echo "$podstatus" | grep "not found")" ]; then
-              break
-            fi
+          kubectl -n $namespace logs -f $extra_args --all-containers $podname >> $logpath/full_logs.log || true
 
-            old_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
-
-            extra_args=""
-            if [ ! -z "$since_time" ]; then
-              extra_args="--since-time $since_time"
-            fi
-
-            kubectl -n $namespace logs -f $extra_args --all-containers $podname >> $logpath/full_logs.log || true
-
-            new_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
-            if [ "$new_logsize" -gt "$old_logsize" ]; then
-              since_time="$(date --iso-8601=seconds)"
-              echo "" >> $logpath/full_logs.log
-              echo "### log collection interrupted at $since_time" >> $logpath/full_logs.log
-              echo "" >> $logpath/full_logs.log
-            fi
-            sleep 10
-          done
-
-          echo "Completed log collection for $podname"
-        }
-
-        while read line; do
-          podname=$(echo "$line" | sed 's/^\([^ ]*\) .*$/\1/')
-          echo "pod name: $podname"
-
-          collect_pod_logs $podname &
-        done <<< $(kubectl -n $namespace get pods | tail -n +2)
-
-        sleep 10
-        echo "ok" > $tempdir/log_collect.txt
-        
-        sleep 60
-        FAIL=0
-        for job in `jobs -p`; do
-          echo $job
-          wait $job || let "FAIL+=1"
+          new_logsize="$(stat --printf="%s" $logpath/full_logs.log)"
+          if [ "$new_logsize" -gt "$old_logsize" ]; then
+            since_time="$(date --iso-8601=seconds)"
+            echo "" >> $logpath/full_logs.log
+            echo "### log collection interrupted at $since_time" >> $logpath/full_logs.log
+            echo "" >> $logpath/full_logs.log
+          fi
+          sleep 10
         done
+
+        echo "Completed log collection for $podname"
+      }
+
+      while read line; do
+        podname=$(echo "$line" | sed 's/^\([^ ]*\) .*$/\1/')
+        echo "pod name: $podname"
+
+        collect_pod_logs $podname &
+      done <<< $(kubectl -n $namespace get pods | tail -n +2)
+
+      sleep 10
+      echo "ok" > $tempdir/log_collect.txt
+
+      sleep 60
+      FAIL=0
+      for job in `jobs -p`; do
+        echo $job
+        wait $job || let "FAIL+=1"
+      done
+      SCRIPT_EOF
   - name: Run persistent log collection for kubernetes in background
-    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
     if: ${{ inputs.kurtosis_backend == 'kubernetes' && inputs.persistent_logs == 'true' }}
-    with:
-      run: |
-        chmod 755 ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh && ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
-      wait-on: |
-        file:${{ steps.kurtosis.outputs.tempdir }}/log_collect.txt
-      tail: true
-      log-output-resume: stderr,stdout
-      log-output-if: failure,success
+    shell: bash
+    env:
+      TEMPDIR: ${{ steps.kurtosis.outputs.tempdir }}
+    run: |
+      chmod 755 "$TEMPDIR/log_collector.sh"
+      nohup "$TEMPDIR/log_collector.sh" > "$TEMPDIR/log_collector.log" 2>&1 &
+      disown
+      if ! npx --yes wait-on@8.0.1 "file:$TEMPDIR/log_collect.txt" --timeout 120000 --interval 1000 --verbose; then
+        echo "::error::log collector did not produce $TEMPDIR/log_collect.txt within 120s"
+        cat "$TEMPDIR/log_collector.log" || true
+        exit 1
+      fi
 
   # extract assertoor url & wait for tests
   - name: Get service links
