@@ -64,6 +64,26 @@ inputs:
     description: 'Await assertoor test completion and return test results (true/false)'
     required: false
     default: 'true'
+  docker_cache_enabled:
+    description: 'Enable docker cache (true/false)'
+    required: false
+    default: 'false'
+  docker_cache_url:
+    description: 'Docker cache URL'
+    required: false
+    default: ''
+  docker_cache_dockerhub_prefix:
+    description: 'Docker cache Docker Hub prefix for image names'
+    required: false
+    default: 'dh'
+  docker_cache_github_prefix:
+    description: 'Docker cache GitHub prefix for image names'
+    required: false
+    default: 'gh'
+  docker_cache_google_prefix:
+    description: 'Docker cache Google prefix for image names'
+    required: false
+    default: 'gcr'
 
 outputs:
   services:
@@ -78,7 +98,7 @@ outputs:
   failed_test_details:
     description: "Failed Assertoor Test details"
     value: ${{ steps.test_result.outputs.failed_test_details }}
-  
+
 runs:
   using: 'composite'
   steps:
@@ -93,7 +113,89 @@ runs:
         sudo apt-get update
         sudo apt-get install gettext-base
       fi
-  - name: Setup Kurtosis
+  - name: Setup Kurtosis (with cache)
+    if: ${{ inputs.docker_cache_enabled == 'true' }}
+    shell: bash
+    run: |
+      # Check if docker cache URL is provided
+      cache_url="${{ inputs.docker_cache_url }}"
+
+      if [ ! -z "$cache_url" ]; then
+        echo "Installing Kurtosis with pull-through cache support..."
+        echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+        sudo apt update
+        if [ "${{ inputs.kurtosis_version }}" = "latest" ]; then
+          sudo apt install kurtosis-cli
+        else
+          sudo apt install kurtosis-cli=${{ inputs.kurtosis_version }}
+        fi
+        kurtosis analytics disable
+        echo "$(dirname $(which kurtosis))" >> $GITHUB_PATH
+
+        # Get the installed version and save it as an environment variable
+        KURTOSIS_VERSION=$(kurtosis version | grep -o 'Version:[[:space:]]*[^[:space:]]*' | cut -d':' -f2 | tr -d ' ')
+        echo "KURTOSIS_VERSION=$KURTOSIS_VERSION" >> $GITHUB_ENV
+        echo "Installed Kurtosis version: $KURTOSIS_VERSION"
+
+        # Extract tool versions from Kurtosis source code with fallbacks
+        echo "Fetching tool versions from Kurtosis source..."
+        echo "Tool versions extracted:"
+
+        TRAEFIK_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/main/container-engine-lib/lib/backend_impls/docker/docker_kurtosis_backend/reverse_proxy_functions/implementations/traefik/consts.go | grep 'containerImage.*=.*"traefik:' | sed 's/.*traefik:\([^"]*\)".*/\1/')
+        echo "TRAEFIK_VERSION=$TRAEFIK_VERSION" >> $GITHUB_ENV
+        echo "  Traefik: $TRAEFIK_VERSION"
+
+        VECTOR_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/main/container-engine-lib/lib/backend_impls/docker/docker_kurtosis_backend/logs_aggregator_functions/implementations/vector/consts.go | grep 'containerImage.*=.*"timberio/vector:' | sed 's/.*timberio\/vector:\([^"]*\)".*/\1/')
+        echo "VECTOR_VERSION=$VECTOR_VERSION" >> $GITHUB_ENV
+        echo "  Vector: $VECTOR_VERSION"
+
+        FLUENTBIT_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/main/container-engine-lib/lib/backend_impls/docker/docker_kurtosis_backend/logs_collector_functions/implementations/fluentbit/consts.go | grep 'containerImage.*=.*"fluent/fluent-bit:' | sed 's/.*fluent\/fluent-bit:\([^"]*\)".*/\1/')
+        echo "FLUENTBIT_VERSION=$FLUENTBIT_VERSION" >> $GITHUB_ENV
+        echo "  Fluent-bit: $FLUENTBIT_VERSION"
+
+        ALPINE_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/main/container-engine-lib/lib/backend_impls/docker/docker_kurtosis_backend/logs_collector_functions/implementations/fluentbit/fluentbit_configuration_creator.go | grep 'configuratorContainerImage.*=.*"alpine:' | sed 's/.*alpine:\([^"]*\)".*/\1/')
+        echo "ALPINE_VERSION=$ALPINE_VERSION" >> $GITHUB_ENV
+        echo "  Alpine: $ALPINE_VERSION"
+
+        BLACK_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/78041d2b84d2e56a5bf84d70e3501dfa4056c4b6/cli/cli/commands/lint/lint.go | grep 'pyBlackDockerImage.*=.*"pyfound/black:' | sed 's/.*pyfound\/black:\([^"]*\)".*/\1/')
+        echo "BLACK_VERSION=$BLACK_VERSION" >> $GITHUB_ENV
+        echo "  Black: $BLACK_VERSION"
+
+        CURL_JQ_VERSION=$(curl -sf https://raw.githubusercontent.com/kurtosis-tech/kurtosis/78041d2b84d2e56a5bf84d70e3501dfa4056c4b6/core/server/api_container/server/startosis_engine/kurtosis_instruction/tasks/run_sh.go | grep 'badouralix/curl-jq:' | sed 's/.*badouralix\/curl-jq:\([^"]*\)".*/\1/')
+        echo "CURL_JQ_VERSION=$CURL_JQ_VERSION" >> $GITHUB_ENV
+        echo "  Curl-jq: $CURL_JQ_VERSION"
+
+        EGG_VERSION=$(curl -sf https://raw.githubusercontent.com/ethpandaops/ethereum-package/${{ inputs.ethereum_package_branch }}/src/package_io/constants.star | grep -A1 'DEFAULT_ETHEREUM_GENESIS_GENERATOR_IMAGE = (' | grep 'ethpandaops/ethereum-genesis-generator:' | sed 's/.*ethpandaops\/ethereum-genesis-generator:\([^"]*\)".*/\1/')
+        echo "EGG_VERSION=$EGG_VERSION" >> $GITHUB_ENV
+        echo "  EGG: $EGG_VERSION"
+
+        LIGHTHOUSE_VERSION=$(curl -sf https://raw.githubusercontent.com/ethpandaops/ethereum-package/${{ inputs.ethereum_package_branch }}/src/package_io/input_parser.star | grep '"lighthouse": "sigp/lighthouse:' | head -1 | sed 's/.*sigp\/lighthouse:\([^"]*\)".*/\1/')
+        echo "LIGHTHOUSE_VERSION=$LIGHTHOUSE_VERSION" >> $GITHUB_ENV
+        echo "  Lighthouse: $LIGHTHOUSE_VERSION"
+
+        CLIENT_GO_VERSION=$(curl -sf https://raw.githubusercontent.com/ethpandaops/ethereum-package/${{ inputs.ethereum_package_branch }}/src/package_io/input_parser.star | grep '"geth": "ethereum/client-go:' | sed 's/.*ethereum\/client-go:\([^"]*\)".*/\1/')
+        echo "CLIENT_GO_VERSION=$CLIENT_GO_VERSION" >> $GITHUB_ENV
+        echo "  Client-go: $CLIENT_GO_VERSION"
+
+        VAL_TOOLS_VERSION=$(curl -sf https://raw.githubusercontent.com/ethpandaops/ethereum-package/${{ inputs.ethereum_package_branch }}/src/prelaunch_data_generator/validator_keystores/validator_keystore_generator.star | grep 'ETH_VAL_TOOLS_IMAGE = "protolambda/eth2-val-tools:' | sed 's/.*protolambda\/eth2-val-tools:\([^"]*\)".*/\1/')
+        echo "VAL_TOOLS_VERSION=$VAL_TOOLS_VERSION" >> $GITHUB_ENV
+        echo "  Val-tools: $VAL_TOOLS_VERSION"
+      else
+        echo "Docker cache parameters provided but not enabled, using regular installation..."
+        echo "deb [trusted=yes] https://apt.fury.io/kurtosis-tech/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
+        sudo apt update
+        if [ "${{ inputs.kurtosis_version }}" = "latest" ]; then
+          sudo apt install kurtosis-cli
+        else
+          sudo apt install kurtosis-cli=${{ inputs.kurtosis_version }}
+        fi
+        kurtosis analytics disable
+        echo "$(dirname $(which kurtosis))" >> $GITHUB_PATH
+      fi
+
+  - name: Setup Kurtosis (regular)
+    if: ${{ inputs.docker_cache_enabled != 'true' }}
+    shell: bash
     run: |
       echo "deb [trusted=yes] https://sdk.kurtosis.com/kurtosis-cli-release-artifacts/ /" | sudo tee /etc/apt/sources.list.d/kurtosis.list
       sudo apt update
@@ -104,8 +206,53 @@ runs:
       fi
       kurtosis analytics disable
       echo "$(dirname $(which kurtosis))" >> $GITHUB_PATH
+
+  - name: Pull images
+    if: ${{ inputs.docker_cache_enabled == 'true' }}
     shell: bash
-  
+    run: |
+      # Check if docker cache URL is provided
+      cache_url="${{ inputs.docker_cache_url }}"
+
+      if [ ! -z "$cache_url" ]; then
+        # Pull images in parallel
+        echo "Starting parallel docker pulls from cache URL: $cache_url"
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/engine:$KURTOSIS_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/files-artifacts-expander:$KURTOSIS_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/core:$KURTOSIS_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/timberio/vector:$VECTOR_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/fluent/fluent-bit:$FLUENTBIT_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/alpine:$ALPINE_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/traefik:$TRAEFIK_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/badouralix/curl-jq:$CURL_JQ_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/pyfound/black:$BLACK_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/ethpandaops/ethereum-genesis-generator:$EGG_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/sigp/lighthouse:$LIGHTHOUSE_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/ethereum/client-go:$CLIENT_GO_VERSION &
+        docker pull $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/protolambda/eth2-val-tools:$VAL_TOOLS_VERSION &
+
+        # Wait for all pulls to complete
+        wait
+        echo "All docker pulls completed"
+
+        # Tag images sequentially (fast operation)
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/engine:$KURTOSIS_VERSION kurtosistech/engine:$KURTOSIS_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/files-artifacts-expander:$KURTOSIS_VERSION kurtosistech/files-artifacts-expander:$KURTOSIS_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/kurtosistech/core:$KURTOSIS_VERSION kurtosistech/core:$KURTOSIS_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/timberio/vector:$VECTOR_VERSION timberio/vector:$VECTOR_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/fluent/fluent-bit:$FLUENTBIT_VERSION fluent/fluent-bit:$FLUENTBIT_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/alpine:$ALPINE_VERSION alpine:$ALPINE_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/traefik:$TRAEFIK_VERSION traefik:$TRAEFIK_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/badouralix/curl-jq:$CURL_JQ_VERSION badouralix/curl-jq:$CURL_JQ_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/pyfound/black:$BLACK_VERSION pyfound/black:$BLACK_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/ethpandaops/ethereum-genesis-generator:$EGG_VERSION ethpandaops/ethereum-genesis-generator:$EGG_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/sigp/lighthouse:$LIGHTHOUSE_VERSION sigp/lighthouse:$LIGHTHOUSE_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/ethereum/client-go:$CLIENT_GO_VERSION ethereum/client-go:$CLIENT_GO_VERSION
+        docker tag $cache_url/${{ inputs.docker_cache_dockerhub_prefix }}/protolambda/eth2-val-tools:$VAL_TOOLS_VERSION protolambda/eth2-val-tools:$VAL_TOOLS_VERSION
+      else
+        echo "Docker cache not enabled, skipping image pulls"
+      fi
+
   # cloud backend configuration
   - name: Configure kurtosis to use kurtosis cloud
     if: ${{ inputs.kurtosis_backend == 'cloud' }}
@@ -123,7 +270,7 @@ runs:
       KURTOSIS_CLOUD_API_KEY: ${{ inputs.kurtosis_cloud_api_key }}
       CLOUD_INSTANCE_ID: ${{ inputs.kurtosis_cloud_instance_id }}
     shell: bash
-  
+
   # kubernetes backend configuration
   - name: Setup kubectl
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
@@ -168,7 +315,7 @@ runs:
     run: |
       kurtosis engine status
       kurtosis enclave ls || ( kurtosis engine restart && kurtosis enclave ls )
-  
+
   # start kurtosis testnet
   - name: Run kurtosis
     shell: bash
@@ -207,7 +354,7 @@ runs:
       write-mode: overwrite
       contents: |
         #!/bin/bash
-        
+
         namespace="kt-${{ steps.kurtosis.outputs.enclave_name }}"
         tempdir="${{ steps.kurtosis.outputs.tempdir }}"
         mkdir -p $tempdir/logs
@@ -263,7 +410,7 @@ runs:
 
         sleep 10
         echo "ok" > $tempdir/log_collect.txt
-        
+
         sleep 60
         FAIL=0
         for job in `jobs -p`; do
@@ -337,7 +484,7 @@ runs:
     with:
       kurtosis_enclave_name: ${{ steps.kurtosis.outputs.enclave_name }}
       assertoor_api_url: ${{ steps.services.outputs.assertoor_url }}
-  
+
   # generate enclave dump
   - name: Generate enclave dump
     if: ${{ always() && inputs.enclave_dump == 'true' }}
