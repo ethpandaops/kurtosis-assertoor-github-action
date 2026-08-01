@@ -155,7 +155,7 @@ runs:
 
       kurtosis cluster set cloud
   - name: Run kurtosis gateway in background
-    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
+    uses: JarvusInnovations/background-action@1f5e5fa2462e48a95f97b54b4842d076d1008e3b # v2.0.0
     if: ${{ inputs.kurtosis_backend == 'kubernetes' }}
     with:
       run: |
@@ -201,7 +201,7 @@ runs:
 
   # kubernets logs are non-persistent, so we have to keep collecting logs of all running pods locally.
   - name: Create persistent log collection script for kubernetes
-    uses: DamianReeves/write-file-action@1d019960841941be46b139298996df6f139cc7a4 # dependabot/npm_and_yarn/undici-5.28.5-1d01996
+    uses: DamianReeves/write-file-action@d4ee8a06aec5db0c57a036b86f2f428e1f8b00e7 # dependabot/npm_and_yarn/undici-5.28.5-1d01996
     with:
       path: ${{ steps.kurtosis.outputs.tempdir }}/log_collector.sh
       write-mode: overwrite
@@ -271,7 +271,7 @@ runs:
           wait $job || let "FAIL+=1"
         done
   - name: Run persistent log collection for kubernetes in background
-    uses: JarvusInnovations/background-action@2428e7b970a846423095c79d43f759abf979a635 # v1.0.7
+    uses: JarvusInnovations/background-action@1f5e5fa2462e48a95f97b54b4842d076d1008e3b # v2.0.0
     if: ${{ inputs.kurtosis_backend == 'kubernetes' && inputs.persistent_logs == 'true' }}
     with:
       run: |
